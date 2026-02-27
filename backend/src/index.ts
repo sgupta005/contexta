@@ -3,6 +3,7 @@ import express from "express";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
 
+import { SCENARIOS } from "./scenarios/index.js";
 import { handleWebsocketConnection } from "./websocket/handle-websocket-connection.js";
 
 const app = express();
@@ -18,6 +19,17 @@ app.get("/health", (_req, res) => {
     timestamp: new Date().toISOString(),
     activeConnections: wss.clients.size,
   });
+});
+
+app.get("/scenarios", (_req, res) => {
+  const scenarios = Object.values(SCENARIOS).map(
+    ({ id, name, description }) => ({
+      id,
+      name,
+      description,
+    })
+  );
+  res.json({ scenarios });
 });
 
 // WebSocket Server
