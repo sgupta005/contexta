@@ -17,6 +17,7 @@
   "packageManager": "pnpm@10.14.0",
   "devDependencies": {
     "@tsconfig/node22": "^22.0.5",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.3.2",
     "@types/ws": "^8.18.1",
@@ -25,6 +26,7 @@
   },
   "dependencies": {
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",
+    "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "prettier": "^3.8.1",

@@ -1,3 +1,4 @@
+import cors from "cors";
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
@@ -10,6 +11,12 @@ const app = express();
 const server = createServer(app);
 
 const PORT = Number(process.env.PORT) || 8000;
+
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL,
+  })
+);
 
 // Health Check
 app.get("/health", (_req, res) => {
