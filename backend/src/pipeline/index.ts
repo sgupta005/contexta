@@ -6,12 +6,13 @@ import type {
   Scenario,
   ServerMessage,
 } from "../lib/types.js";
+import { extractCompleteSentence } from "../lib/utils.js";
 import {
   DeepgramSTTService,
   type FluxTranscriptEvent,
 } from "../services/deepgram-stt.js";
-import { textToSpeech } from "../services/deepgram-tts.js";
-import { generateResponse } from "../services/llm.js";
+import { DeepgramTTSLive } from "../services/deepgram-tts.js";
+import { streamResponse } from "../services/llm.js";
 
 export interface VoicePipelineConfig {
   socket: WebSocket;
@@ -27,6 +28,8 @@ export class VoicePipeline {
   private state: PipelineState = "IDLE";
 
   private conversationHistory: ConversationMessage[] = [];
+
+  private deepgramTTS: DeepgramTTSLive | null = null;
 
   private deepgramSTT: DeepgramSTTService | null = null;
   // if STT is not ready, buffer audio chunks until it is
@@ -97,14 +100,16 @@ export class VoicePipeline {
     }
 
     this.connectSTT();
+    this.connectTTS();
 
     try {
-      console.log("[VoicePipeline] Generating greeting TTS...");
-      const greetingAudio = await textToSpeech(this.scenario.greeting);
+      await this.deepgramTTS!.waitUntilReady();
 
+      console.log("[VoicePipeline] Generating greeting TTS...");
       this.setState("SPEAKING");
 
-      this.sendBinary(greetingAudio);
+      await this.deepgramTTS!.speak(this.scenario.greeting);
+
       this.sendMessage({ type: "audio_end" });
 
       this.greetingSent = true;
@@ -119,12 +124,14 @@ export class VoicePipeline {
     } catch (err) {
       console.error("[VoicePipeline] Greeting failed:", err);
       this.closeSTT();
+      this.closeTTS();
       this.setState("IDLE");
     }
   }
 
   private handleStop(): void {
     this.closeSTT();
+    this.closeTTS();
     this.setState("IDLE");
   }
 
@@ -195,25 +202,50 @@ export class VoicePipeline {
     this.setState("THINKING");
 
     try {
-      const response = await generateResponse(
+      let fullResponse = "";
+      let sentenceBuffer = "";
+      let speakingStarted = false;
+
+      for await (const token of streamResponse(
         this.scenario.systemPrompt,
         this.conversationHistory
-      );
+      )) {
+        this.sendMessage({ type: "agent_response", text: token });
 
-      this.conversationHistory.push({ role: "assistant", content: response });
+        fullResponse += token;
+        sentenceBuffer += token;
 
-      this.sendMessage({ type: "agent_response", text: response });
+        const boundary = extractCompleteSentence(sentenceBuffer);
+        if (boundary) {
+          const [sentence, remaining] = boundary;
+          sentenceBuffer = remaining;
 
-      const responseAudio = await textToSpeech(response);
+          if (!speakingStarted) {
+            this.setState("SPEAKING");
+            speakingStarted = true;
+          }
 
-      this.setState("SPEAKING");
+          await this.deepgramTTS!.speak(sentence);
+        }
+      }
 
-      this.sendBinary(responseAudio);
+      this.conversationHistory.push({
+        role: "assistant",
+        content: fullResponse,
+      });
+
+      if (sentenceBuffer.trim()) {
+        if (!speakingStarted) {
+          this.setState("SPEAKING");
+        }
+        await this.deepgramTTS!.speak(sentenceBuffer.trim());
+      }
+
       this.sendMessage({ type: "audio_end" });
-
       this.setState("LISTENING");
     } catch (err) {
       console.error("[VoicePipeline] Turn processing failed:", err);
+      this.sendMessage({ type: "audio_end" });
       this.setState("LISTENING");
     }
   }
@@ -247,11 +279,27 @@ export class VoicePipeline {
     }
   }
 
+  private connectTTS(): void {
+    this.closeTTS();
+
+    this.deepgramTTS = new DeepgramTTSLive((chunk) => {
+      this.sendBinary(chunk);
+    });
+  }
+
+  private closeTTS(): void {
+    if (this.deepgramTTS) {
+      this.deepgramTTS.close();
+      this.deepgramTTS = null;
+    }
+  }
+
   destroy(): void {
     console.log(
       `[VoicePipeline] Destroying pipeline for session="${this.sessionId}"`
     );
     this.closeSTT();
+    this.closeTTS();
     this.state = "IDLE";
   }
 

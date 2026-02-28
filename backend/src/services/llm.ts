@@ -8,29 +8,23 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-export async function generateResponse(
+export async function* streamResponse(
   systemPrompt: string,
   conversationHistory: ConversationMessage[]
-): Promise<string> {
+): AsyncGenerator<string> {
   console.log(
-    `[LLM] Generating response (${conversationHistory.length} messages in history)`
+    `[LLM] Streaming response (${conversationHistory.length} messages in history)`
   );
 
-  const completion = await openai.chat.completions.create({
+  const stream = await openai.responses.create({
     model: LLM_MODEL,
-    messages: [
-      { role: "system", content: systemPrompt },
-      ...conversationHistory,
-    ],
-    temperature: 0.7,
-    max_tokens: 200,
+    input: [{ role: "system", content: systemPrompt }, ...conversationHistory],
+    stream: true,
   });
 
-  const content = completion.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error("[LLM] No content in completion response");
+  for await (const event of stream) {
+    if (event.type === "response.output_text.delta") {
+      yield event.delta;
+    }
   }
-
-  console.log(`[LLM] Response: "${content.slice(0, 80)}..."`);
-  return content;
 }

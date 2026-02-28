@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { RECORDER_TIMESLICE_MS, WS_URL } from "@/lib/constants";
 import type { Message, PipelineState, VoiceAgentStatus } from "@/lib/types";
 
+const TTS_SAMPLE_RATE = 24000;
+
 export function useVoiceAgent() {
   const [status, setStatus] = useState<VoiceAgentStatus>("idle");
   const [pipelineState, setPipelineState] = useState<PipelineState>("IDLE");
@@ -13,55 +15,63 @@ export function useVoiceAgent() {
   const [messages, setMessages] = useState<Message[]>([]);
   // user's speach that is currently being transcribed
   const [currentTranscript, setCurrentTranscript] = useState("");
+  // true while we are streaming agent response
+  const isStreamingAgentRef = useRef(false);
 
   const socketRef = useRef<WebSocket | null>(null);
   const sessionIdRef = useRef<string>(crypto.randomUUID());
-  
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
-  // audio chunks that are received from the server
-  const audioChunksRef = useRef<Blob[]>([]);
-  // audio that is currently playing
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const nextPlayTimeRef = useRef(0);
+  const activeSourceCountRef = useRef(0);
+  const audioEndReceivedRef = useRef(false);
 
-  const playAudio = useCallback(() => {
-    const chunks = audioChunksRef.current;
-    if (chunks.length === 0) return;
-
-    const blob = new Blob(chunks, { type: "audio/mpeg" });
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-
-    currentAudioRef.current = audio;
-
-    audio.onended = () => {
-      URL.revokeObjectURL(url);
-      currentAudioRef.current = null;
+  const checkPlaybackComplete = useCallback(() => {
+    if (activeSourceCountRef.current === 0 && audioEndReceivedRef.current) {
+      audioEndReceivedRef.current = false;
       setPipelineState("LISTENING");
-    };
-
-    audio.onerror = () => {
-      URL.revokeObjectURL(url);
-      currentAudioRef.current = null;
-      setPipelineState("LISTENING");
-      console.error("[Audio] Playback error");
-    };
-
-    audio.play().catch((err) => {
-      console.error("[Audio] Failed to play:", err);
-      URL.revokeObjectURL(url);
-      currentAudioRef.current = null;
-      setPipelineState("LISTENING");
-    });
-
-    audioChunksRef.current = [];
+    }
   }, []);
+
+  const scheduleAudioChunk = useCallback(
+    (pcmData: ArrayBuffer) => {
+      const ctx = audioContextRef.current;
+      if (!ctx || pcmData.byteLength === 0) return;
+
+      const int16 = new Int16Array(pcmData);
+      const float32 = new Float32Array(int16.length);
+      for (let i = 0; i < int16.length; i++) {
+        float32[i] = int16[i] / 32768;
+      }
+
+      const buffer = ctx.createBuffer(1, float32.length, TTS_SAMPLE_RATE);
+      buffer.getChannelData(0).set(float32);
+
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(ctx.destination);
+
+      const now = ctx.currentTime;
+      const startTime = Math.max(nextPlayTimeRef.current, now);
+      source.start(startTime);
+      nextPlayTimeRef.current = startTime + buffer.duration;
+
+      activeSourceCountRef.current++;
+      source.onended = () => {
+        activeSourceCountRef.current--;
+        checkPlaybackComplete();
+      };
+    },
+    [checkPlaybackComplete]
+  );
 
   const handleServerMessage = useCallback(
     (event: MessageEvent) => {
-      if (event.data instanceof Blob) {
-        audioChunksRef.current.push(event.data);
+      if (event.data instanceof ArrayBuffer) {
+        scheduleAudioChunk(event.data);
         return;
       }
 
@@ -71,7 +81,7 @@ export function useVoiceAgent() {
         switch (msg.type) {
           case "state": {
             const newState = msg.state as PipelineState;
-            if (newState === "LISTENING" && currentAudioRef.current) {
+            if (newState === "LISTENING" && activeSourceCountRef.current > 0) {
               break;
             }
             setPipelineState(newState);
@@ -91,21 +101,30 @@ export function useVoiceAgent() {
             break;
 
           case "agent_response":
-            setMessages((prev) => [
-              ...prev,
-              { role: "assistant", content: msg.text },
-            ]);
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (isStreamingAgentRef.current && last?.role === "assistant") {
+                return [
+                  ...prev.slice(0, -1),
+                  { role: "assistant", content: last.content + msg.text },
+                ];
+              }
+              isStreamingAgentRef.current = true;
+              return [...prev, { role: "assistant", content: msg.text }];
+            });
             break;
 
           case "audio_end":
-            playAudio();
+            isStreamingAgentRef.current = false;
+            audioEndReceivedRef.current = true;
+            checkPlaybackComplete();
             break;
         }
       } catch {
         console.error("[WS] Failed to parse message");
       }
     },
-    [playAudio]
+    [scheduleAudioChunk, checkPlaybackComplete]
   );
 
   const stopRecording = useCallback(() => {
@@ -140,6 +159,16 @@ export function useVoiceAgent() {
     console.log("[Mic] Recording started");
   }, []);
 
+  const stopAudioPlayback = useCallback(() => {
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    nextPlayTimeRef.current = 0;
+    activeSourceCountRef.current = 0;
+    audioEndReceivedRef.current = false;
+  }, []);
+
   const connect = useCallback(
     (scenarioId: string) => {
       if (socketRef.current) {
@@ -150,10 +179,17 @@ export function useVoiceAgent() {
       setMessages([]);
       setCurrentTranscript("");
       setPipelineState("IDLE");
+      isStreamingAgentRef.current = false;
+
+      // Create AudioContext early — requires user gesture context
+      stopAudioPlayback();
+      audioContextRef.current = new AudioContext({
+        sampleRate: TTS_SAMPLE_RATE,
+      });
 
       const url = `${WS_URL}?scenarioId=${encodeURIComponent(scenarioId)}&sessionId=${encodeURIComponent(sessionIdRef.current)}`;
       const ws = new WebSocket(url);
-      ws.binaryType = "blob";
+      ws.binaryType = "arraybuffer";
 
       ws.onopen = async () => {
         setStatus("connected");
@@ -189,16 +225,12 @@ export function useVoiceAgent() {
 
       socketRef.current = ws;
     },
-    [startRecording, stopRecording, handleServerMessage]
+    [startRecording, stopRecording, stopAudioPlayback, handleServerMessage]
   );
 
   const disconnect = useCallback(() => {
     stopRecording();
-
-    if (currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      currentAudioRef.current = null;
-    }
+    stopAudioPlayback();
 
     if (socketRef.current) {
       if (socketRef.current.readyState === WebSocket.OPEN) {
@@ -209,23 +241,21 @@ export function useVoiceAgent() {
       setStatus("idle");
       setPipelineState("IDLE");
     }
-  }, [stopRecording]);
+  }, [stopRecording, stopAudioPlayback]);
 
   useEffect(() => {
     return () => {
       stopRecording();
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause();
-        currentAudioRef.current = null;
-      }
+      stopAudioPlayback();
       if (socketRef.current) {
         socketRef.current.close(1000, "Component unmounted");
         socketRef.current = null;
       }
     };
-  }, [stopRecording]);
+  }, [stopRecording, stopAudioPlayback]);
 
   return {
+    isStreamingResponse: isStreamingAgentRef.current,
     status,
     pipelineState,
     messages,

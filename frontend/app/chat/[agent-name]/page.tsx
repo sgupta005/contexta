@@ -28,6 +28,7 @@ export default function Page({
 }) {
   const { "agent-name": agentName } = use(params);
   const {
+    isStreamingResponse,
     status,
     pipelineState,
     messages,
@@ -102,7 +103,12 @@ export default function Page({
                     : "bg-muted text-foreground"
                 }`}
               >
-                {msg.content}
+                {msg.content}{" "}
+                {isStreamingResponse ? (
+                  <span className="animate-pulse">...</span>
+                ) : (
+                  ""
+                )}
               </div>
             </div>
           ))}

@@ -1,66 +1,89 @@
-import { createClient } from "@deepgram/sdk";
+import { createClient, LiveTTSEvents } from "@deepgram/sdk";
+import type { SpeakLiveClient } from "@deepgram/sdk";
 
 const TTS_MODEL = "aura-2-thalia-en";
-const MAX_CHARS = 2000;
+export const TTS_SAMPLE_RATE = 24000;
 
-const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
+type AudioChunkHandler = (audio: Buffer) => void;
 
-async function streamToBuffer(
-  stream: ReadableStream<Uint8Array>
-): Promise<Buffer> {
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
+export class DeepgramTTSLive {
+  private connection: SpeakLiveClient;
+  private onAudioChunk: AudioChunkHandler;
+  private flushResolve: (() => void) | null = null;
+  private openResolve: (() => void) | null = null;
+  private ready = false;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
+  constructor(onAudioChunk: AudioChunkHandler) {
+    this.onAudioChunk = onAudioChunk;
+
+    const deepgram = createClient(process.env.DEEPGRAM_API_KEY);
+
+    this.connection = deepgram.speak.live({
+      model: TTS_MODEL,
+      encoding: "linear16",
+      sample_rate: TTS_SAMPLE_RATE,
+    });
+
+    this.connection.on(LiveTTSEvents.Open, () => {
+      console.log("[DeepgramTTS] Live connection opened");
+      this.ready = true;
+      if (this.openResolve) {
+        this.openResolve();
+        this.openResolve = null;
+      }
+    });
+
+    this.connection.on(LiveTTSEvents.Audio, (data: Buffer) => {
+      this.onAudioChunk(data);
+    });
+
+    this.connection.on(LiveTTSEvents.Flushed, () => {
+      if (this.flushResolve) {
+        this.flushResolve();
+        this.flushResolve = null;
+      }
+    });
+
+    this.connection.on(LiveTTSEvents.Error, (err: unknown) => {
+      console.error("[DeepgramTTS] Error:", err);
+    });
+
+    this.connection.on(LiveTTSEvents.Close, () => {
+      console.log("[DeepgramTTS] Live connection closed");
+      this.ready = false;
+      if (this.flushResolve) {
+        this.flushResolve();
+        this.flushResolve = null;
+      }
+    });
   }
 
-  return Buffer.concat(chunks);
-}
-
-function splitAtSentenceBoundaries(text: string): string[] {
-  if (text.length <= MAX_CHARS) return [text];
-
-  const chunks: string[] = [];
-  let remaining = text;
-
-  while (remaining.length > MAX_CHARS) {
-    let splitIdx = remaining.lastIndexOf(". ", MAX_CHARS);
-    if (splitIdx === -1) splitIdx = remaining.lastIndexOf("! ", MAX_CHARS);
-    if (splitIdx === -1) splitIdx = remaining.lastIndexOf("? ", MAX_CHARS);
-    if (splitIdx === -1) splitIdx = remaining.lastIndexOf(" ", MAX_CHARS);
-    if (splitIdx === -1) splitIdx = MAX_CHARS;
-
-    chunks.push(remaining.slice(0, splitIdx + 1).trim());
-    remaining = remaining.slice(splitIdx + 1).trim();
+  waitUntilReady(): Promise<void> {
+    if (this.ready) return Promise.resolve();
+    return new Promise((resolve) => {
+      this.openResolve = resolve;
+    });
   }
 
-  if (remaining) chunks.push(remaining);
-  return chunks;
-}
-
-export async function textToSpeech(text: string): Promise<Buffer> {
-  const chunks = splitAtSentenceBoundaries(text);
-  const audioBuffers: Buffer[] = [];
-
-  for (const chunk of chunks) {
-    console.log(`[DeepgramTTS] Generating audio for ${chunk.length} chars...`);
-
-    const response = await deepgram.speak.request(
-      { text: chunk },
-      { model: TTS_MODEL }
-    );
-
-    const stream = await response.getStream();
-    if (!stream) {
-      throw new Error("[DeepgramTTS] No audio stream returned");
+  speak(text: string): Promise<void> {
+    if (!this.ready) {
+      return Promise.reject(new Error("[DeepgramTTS] Connection not ready"));
     }
 
-    const buffer = await streamToBuffer(stream);
-    audioBuffers.push(buffer);
+    return new Promise<void>((resolve) => {
+      this.flushResolve = resolve;
+      this.connection.sendText(text);
+      this.connection.flush();
+    });
   }
 
-  return Buffer.concat(audioBuffers);
+  close(): void {
+    this.ready = false;
+    if (this.flushResolve) {
+      this.flushResolve();
+      this.flushResolve = null;
+    }
+    this.connection.removeAllListeners();
+    this.connection.requestClose();
+  }
 }
