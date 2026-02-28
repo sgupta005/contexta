@@ -38,11 +38,13 @@ export function useVoiceAgent() {
     audio.onended = () => {
       URL.revokeObjectURL(url);
       currentAudioRef.current = null;
+      setPipelineState("LISTENING");
     };
 
     audio.onerror = () => {
       URL.revokeObjectURL(url);
       currentAudioRef.current = null;
+      setPipelineState("LISTENING");
       console.error("[Audio] Playback error");
     };
 
@@ -50,6 +52,7 @@ export function useVoiceAgent() {
       console.error("[Audio] Failed to play:", err);
       URL.revokeObjectURL(url);
       currentAudioRef.current = null;
+      setPipelineState("LISTENING");
     });
 
     audioChunksRef.current = [];
@@ -66,9 +69,14 @@ export function useVoiceAgent() {
         const msg = JSON.parse(event.data as string);
 
         switch (msg.type) {
-          case "state":
-            setPipelineState(msg.state as PipelineState);
+          case "state": {
+            const newState = msg.state as PipelineState;
+            if (newState === "LISTENING" && currentAudioRef.current) {
+              break;
+            }
+            setPipelineState(newState);
             break;
+          }
 
           case "transcript":
             if (msg.isFinal) {
