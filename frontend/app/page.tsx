@@ -6,7 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Scenario } from "@/types";
+import { Scenario } from "@/lib/types";
 
 export default async function Page() {
   const { scenarios } = await getScenarios();

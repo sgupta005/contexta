@@ -1,16 +1,25 @@
 "use client";
 
-import { use } from "react";
+import { use, useEffect, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useVoiceAgent } from "@/hooks/use-voice-agent";
+import { STATUS_CONFIG } from "@/lib/constants";
+import type { PipelineState } from "@/lib/types";
 
-const STATUS_CONFIG = {
-  idle: { label: "Ready", color: "bg-muted-foreground" },
-  connecting: { label: "Connecting…", color: "bg-yellow-500" },
-  connected: { label: "Connected", color: "bg-emerald-500" },
-  error: { label: "Connection failed", color: "bg-destructive" },
-} as const;
+const PIPELINE_LABELS: Record<PipelineState, string> = {
+  IDLE: "Idle",
+  LISTENING: "Listening...",
+  THINKING: "Thinking...",
+  SPEAKING: "Speaking...",
+};
+
+const PIPELINE_COLORS: Record<PipelineState, string> = {
+  IDLE: "bg-muted-foreground",
+  LISTENING: "bg-emerald-500",
+  THINKING: "bg-amber-500",
+  SPEAKING: "bg-blue-500",
+};
 
 export default function Page({
   params,
@@ -18,9 +27,26 @@ export default function Page({
   params: Promise<{ "agent-name": string }>;
 }) {
   const { "agent-name": agentName } = use(params);
-  const { status, connect, disconnect } = useVoiceAgent();
+  const {
+    status,
+    pipelineState,
+    messages,
+    currentTranscript,
+    connect,
+    disconnect,
+  } = useVoiceAgent();
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [messages, currentTranscript]);
 
   const isActive = status === "connected" || status === "connecting";
+  const { label: statusLabel, color: statusColor } = STATUS_CONFIG[status];
 
   function handleClick() {
     if (isActive) {
@@ -30,24 +56,81 @@ export default function Page({
     }
   }
 
-  const { label, color } = STATUS_CONFIG[status];
-
   return (
-    <div className="flex h-screen flex-col items-center justify-center gap-6">
-      <Button
-        size="lg"
-        variant={isActive ? "destructive" : "default"}
-        onClick={handleClick}
-        disabled={status === "connecting"}
-      >
-        {isActive ? "End Conversation" : "Start Conversation"}
-      </Button>
+    <div className="flex h-screen flex-col">
+      {/* Header */}
+      <header className="border-b px-6 py-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-lg font-semibold capitalize">
+            {agentName.replace(/-/g, " ")}
+          </h1>
+          <div className="flex items-center gap-4">
+            {/* Pipeline state */}
+            {isActive && (
+              <div className="flex items-center gap-2 text-sm">
+                <span
+                  className={`inline-block h-2 w-2 rounded-full ${PIPELINE_COLORS[pipelineState]}`}
+                />
+                <span className="text-muted-foreground">
+                  {PIPELINE_LABELS[pipelineState]}
+                </span>
+              </div>
+            )}
+            {/* Connection status */}
+            <div className="flex items-center gap-2 text-sm">
+              <span
+                className={`inline-block h-2 w-2 rounded-full ${statusColor}`}
+              />
+              <span className="text-muted-foreground">{statusLabel}</span>
+            </div>
+          </div>
+        </div>
+      </header>
 
-      {/* Status indicator */}
-      <div className="flex items-center gap-2 text-sm">
-        <span className={`inline-block h-2 w-2 rounded-full ${color}`} />
-        <span className="text-muted-foreground">{label}</span>
+      {/* Messages */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="mx-auto flex max-w-2xl flex-col gap-3">
+          {messages.map((msg, i) => (
+            <div
+              key={i}
+              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              <div
+                className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
+                  msg.role === "user"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-foreground"
+                }`}
+              >
+                {msg.content}
+              </div>
+            </div>
+          ))}
+
+          {/* Live interim transcript */}
+          {currentTranscript && (
+            <div className="flex justify-end">
+              <div className="text-muted-foreground max-w-[80%] rounded-2xl border border-dashed px-4 py-2.5 text-sm italic">
+                {currentTranscript}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Controls */}
+      <footer className="border-t px-6 py-4">
+        <div className="flex justify-center">
+          <Button
+            size="lg"
+            variant={isActive ? "destructive" : "default"}
+            onClick={handleClick}
+            disabled={status === "connecting"}
+          >
+            {isActive ? "End Conversation" : "Start Conversation"}
+          </Button>
+        </div>
+      </footer>
     </div>
   );
 }

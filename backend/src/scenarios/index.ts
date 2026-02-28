@@ -1,9 +1,10 @@
-import type { Scenario } from "../types.js";
+import type { Scenario } from "../lib/types.js";
 
 export const SCENARIOS: Record<string, Scenario> = {
   "calling-agent": {
     id: "calling-agent",
     name: "Calling Agent",
+    greeting: "Hello, how can I help you today?",
     description:
       "A professional phone agent that handles calls, schedules appointments, and takes messages.",
     systemPrompt: `You are a professional calling agent named Alex. You handle phone calls on behalf of businesses.
@@ -20,6 +21,7 @@ Style: Professional, warm, concise. Use natural phone conversation patterns like
   "customer-support": {
     id: "customer-support",
     name: "Customer Support",
+    greeting: "Hello, how can I help you today?",
     description:
       "A helpful support agent that resolves issues, answers product questions, and guides users.",
     systemPrompt: `You are a friendly customer support agent named Sam working for a tech company.
@@ -36,6 +38,7 @@ Style: Empathetic, patient, solution-oriented. Acknowledge frustration before ju
   "technical-assistant": {
     id: "technical-assistant",
     name: "Technical Assistant",
+    greeting: "Hello, how can I help you today?",
     description:
       "A knowledgeable tech assistant that helps with coding, debugging, and technical concepts.",
     systemPrompt: `You are a knowledgeable technical assistant named Jordan. You help developers and tech enthusiasts.
