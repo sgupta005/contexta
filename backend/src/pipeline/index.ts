@@ -117,6 +117,10 @@ export class VoicePipeline {
         role: "assistant",
         content: this.scenario.greeting,
       });
+      this.sendMessage({
+        type: "agent_response",
+        text: this.scenario.greeting,
+      });
 
       // Before the greeting is sent, we only need the first chunk because it has the opus/webm header, so remove any other chunks
       if (this.audioBuffer.length > 1) {
