@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, JetBrains_Mono } from "next/font/google";
+import Link from "next/link";
 
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -47,7 +48,7 @@ export default function RootLayout({
               <div className="flex items-center space-x-2">
                 <div className="bg-primary size-4" />
                 <span className="text-xs font-medium tracking-[0.2em] uppercase">
-                  Contexta AI
+                  <Link href="/">Contexta AI</Link>
                 </span>
               </div>
               <div className="flex items-center space-x-6">
