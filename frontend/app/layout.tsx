@@ -43,7 +43,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <div className="bg-background flex min-h-screen flex-col items-center justify-start gap-6 p-8">
+          <div className="bg-background flex min-h-dvh flex-col items-center justify-start gap-6 p-8">
             <header className="z-20 mx-auto flex w-full max-w-7xl items-center justify-between opacity-80">
               <div className="flex items-center space-x-2">
                 <div className="bg-primary size-4" />

@@ -77,7 +77,7 @@ export default function Page({
                 {previewContent}
               </span>
             </SheetTrigger>
-            <SheetContent className="min-w-md md:min-w-xl">
+            <SheetContent className="min-w-sm sm:min-w-md md:min-w-xl">
               <ConversationHistory messages={messages} />
             </SheetContent>
           </Sheet>
