@@ -50,9 +50,7 @@ export default async function Page() {
 async function getScenarios() {
   try {
     const baseUrl = process.env.BACKEND_URL || "http://localhost:8000";
-    const res = await fetch(`${baseUrl}/scenarios`, {
-      next: { revalidate: 3600 }, // cache for 1 hour
-    });
+    const res = await fetch(`${baseUrl}/scenarios`);
     if (!res.ok) {
       return { scenarios: [] };
     }
