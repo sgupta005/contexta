@@ -20,6 +20,7 @@ export async function* streamResponse(
     model: LLM_MODEL,
     input: [{ role: "system", content: systemPrompt }, ...conversationHistory],
     stream: true,
+    max_output_tokens: 1000,
   });
 
   for await (const event of stream) {
