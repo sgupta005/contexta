@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, JetBrains_Mono } from "next/font/google";
 
+import { ThemeProvider } from "@/components/theme-provider";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
+
 import "./globals.css";
 
 const jetbrainsMono = JetBrains_Mono({
@@ -33,7 +36,27 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <div className="bg-background flex min-h-screen flex-col items-center justify-start gap-6 p-8">
+            <header className="z-20 mx-auto flex w-full max-w-7xl items-center justify-between opacity-80">
+              <div className="flex items-center space-x-2">
+                <div className="bg-primary size-4" />
+                <span className="text-xs font-medium tracking-[0.2em] uppercase">
+                  Contexta AI
+                </span>
+              </div>
+              <div className="flex items-center space-x-6">
+                <ThemeToggle />
+              </div>
+            </header>
+            {children}
+          </div>
+        </ThemeProvider>
       </body>
     </html>
   );

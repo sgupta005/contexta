@@ -1,24 +1,23 @@
 "use client";
 
-import { use, useEffect, useRef } from "react";
+import { use } from "react";
 
+import { Mic } from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConversationHistory } from "@/components/ui/conversation-history";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { VoiceOrb } from "@/components/ui/voice-orb";
 import { useVoiceAgent } from "@/hooks/use-voice-agent";
-import { STATUS_CONFIG } from "@/lib/constants";
 import type { PipelineState } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 const PIPELINE_LABELS: Record<PipelineState, string> = {
-  IDLE: "Idle",
+  IDLE: "System Idle",
   LISTENING: "Listening...",
-  THINKING: "Thinking...",
-  SPEAKING: "Speaking...",
-};
-
-const PIPELINE_COLORS: Record<PipelineState, string> = {
-  IDLE: "bg-muted-foreground",
-  LISTENING: "bg-emerald-500",
-  THINKING: "bg-amber-500",
-  SPEAKING: "bg-blue-500",
+  THINKING: "Processing...",
+  SPEAKING: "Responding...",
 };
 
 export default function Page({
@@ -28,26 +27,15 @@ export default function Page({
 }) {
   const { "agent-name": agentName } = use(params);
   const {
-    isStreamingResponse,
     status,
     pipelineState,
-    messages,
     currentTranscript,
     connect,
     disconnect,
+    messages,
   } = useVoiceAgent();
 
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({
-      top: scrollRef.current.scrollHeight,
-      behavior: "smooth",
-    });
-  }, [messages, currentTranscript]);
-
   const isActive = status === "connected" || status === "connecting";
-  const { label: statusLabel, color: statusColor } = STATUS_CONFIG[status];
 
   function handleClick() {
     if (isActive) {
@@ -57,86 +45,71 @@ export default function Page({
     }
   }
 
+  const lastMessage = messages[messages.length - 1];
+  const previewContent =
+    ((isActive && currentTranscript) || lastMessage?.content) ?? "";
+  const isPreviewFromUser =
+    (isActive && !!currentTranscript) || lastMessage?.role === "user";
+
   return (
-    <div className="flex h-screen flex-col">
-      {/* Header */}
-      <header className="border-b px-6 py-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-lg font-semibold capitalize">
-            {agentName.replace(/-/g, " ")}
-          </h1>
-          <div className="flex items-center gap-4">
-            {/* Pipeline state */}
-            {isActive && (
-              <div className="flex items-center gap-2 text-sm">
-                <span
-                  className={`inline-block h-2 w-2 rounded-full ${PIPELINE_COLORS[pipelineState]}`}
-                />
-                <span className="text-muted-foreground">
-                  {PIPELINE_LABELS[pipelineState]}
-                </span>
-              </div>
-            )}
-            {/* Connection status */}
-            <div className="flex items-center gap-2 text-sm">
+    <main className="flex flex-col items-center justify-center gap-12">
+      <div className="text-xl font-light tracking-widest uppercase">
+        {agentName.replaceAll("-", " ")}
+      </div>
+      <div className="flex flex-col items-center justify-center gap-8">
+        <Badge variant="outline" className="p-4 tracking-widest uppercase">
+          {isActive ? PIPELINE_LABELS[pipelineState] : "System Idle"}
+        </Badge>
+        <VoiceOrb isActive={isActive} pipelineState={pipelineState} />
+        {messages.length === 0 && !currentTranscript ? (
+          <p className="text-muted-foreground text-2xl font-light">
+            "Ready when you are."
+          </p>
+        ) : (
+          <Sheet>
+            <SheetTrigger className="cursor-pointer">
               <span
-                className={`inline-block h-2 w-2 rounded-full ${statusColor}`}
-              />
-              <span className="text-muted-foreground">{statusLabel}</span>
-            </div>
+                className={cn(
+                  "line-clamp-2 max-w-md",
+                  isPreviewFromUser ? "text-primary" : "text-muted-foreground"
+                )}
+              >
+                {previewContent}
+              </span>
+            </SheetTrigger>
+            <SheetContent className="min-w-md md:min-w-xl">
+              <ConversationHistory messages={messages} />
+            </SheetContent>
+          </Sheet>
+        )}
+      </div>
+      <div className="flex flex-col items-center justify-center gap-4">
+        <Button
+          onClick={handleClick}
+          disabled={status === "connecting"}
+          className="gap-2 px-12 py-6"
+        >
+          <Mic className="size-5" />
+          <span className="text-sm font-medium tracking-[0.2em] uppercase">
+            {isActive ? "End Conversation" : "Start Conversation"}
+          </span>
+        </Button>
+
+        <div className="flex items-center space-x-8 text-xs tracking-widest uppercase opacity-40">
+          <div className="flex items-center space-x-2">
+            <span
+              className={`size-2 rounded-full ${isActive ? "bg-green-500" : "bg-muted-foreground"}`}
+            />
+            <span>Microphone {isActive ? "Active" : "Inactive"}</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <span
+              className={`size-2 rounded-full ${status === "connected" ? "bg-primary" : "bg-muted-foreground"}`}
+            />
+            <span>Network {status === "connected" ? "Stable" : "Idle"}</span>
           </div>
         </div>
-      </header>
-
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4">
-        <div className="mx-auto flex max-w-2xl flex-col gap-3">
-          {messages.map((msg, i) => (
-            <div
-              key={i}
-              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
-                  msg.role === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-foreground"
-                }`}
-              >
-                {msg.content}{" "}
-                {isStreamingResponse ? (
-                  <span className="animate-pulse">...</span>
-                ) : (
-                  ""
-                )}
-              </div>
-            </div>
-          ))}
-
-          {/* Live interim transcript */}
-          {currentTranscript && (
-            <div className="flex justify-end">
-              <div className="text-muted-foreground max-w-[80%] rounded-2xl border border-dashed px-4 py-2.5 text-sm italic">
-                {currentTranscript}
-              </div>
-            </div>
-          )}
-        </div>
       </div>
-
-      {/* Controls */}
-      <footer className="border-t px-6 py-4">
-        <div className="flex justify-center">
-          <Button
-            size="lg"
-            variant={isActive ? "destructive" : "default"}
-            onClick={handleClick}
-            disabled={status === "connecting"}
-          >
-            {isActive ? "End Conversation" : "Start Conversation"}
-          </Button>
-        </div>
-      </footer>
-    </div>
+    </main>
   );
 }
