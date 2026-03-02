@@ -10,15 +10,13 @@ import { ConversationHistory } from "@/components/ui/conversation-history";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { VoiceOrb } from "@/components/ui/voice-orb";
 import { useVoiceAgent } from "@/hooks/use-voice-agent";
+import {
+  PIPELINE_BADGE_CLASSES,
+  PIPELINE_ICONS,
+  PIPELINE_LABELS,
+} from "@/lib/constants";
 import type { PipelineState } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-const PIPELINE_LABELS: Record<PipelineState, string> = {
-  IDLE: "System Idle",
-  LISTENING: "Listening...",
-  THINKING: "Processing...",
-  SPEAKING: "Responding...",
-};
 
 export default function Page({
   params,
@@ -51,14 +49,24 @@ export default function Page({
   const isPreviewFromUser =
     (isActive && !!currentTranscript) || lastMessage?.role === "user";
 
+  const currentPipelineState: PipelineState = isActive ? pipelineState : "IDLE";
+  const PipelineIcon = PIPELINE_ICONS[currentPipelineState];
+
   return (
     <main className="flex flex-col items-center justify-center gap-12">
       <div className="text-xl font-light tracking-widest uppercase">
         {agentName.replaceAll("-", " ")}
       </div>
       <div className="flex flex-col items-center justify-center gap-8">
-        <Badge variant="outline" className="p-4 tracking-widest uppercase">
-          {isActive ? PIPELINE_LABELS[pipelineState] : "System Idle"}
+        <Badge
+          variant="outline"
+          className={cn(
+            "flex items-center gap-2 rounded-full px-4 py-2 tracking-widest uppercase",
+            PIPELINE_BADGE_CLASSES[currentPipelineState]
+          )}
+        >
+          <PipelineIcon className="h-4 w-4" />
+          <span>{PIPELINE_LABELS[currentPipelineState]}</span>
         </Badge>
         <VoiceOrb isActive={isActive} pipelineState={pipelineState} />
         {messages.length === 0 && !currentTranscript ? (
