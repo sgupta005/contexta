@@ -25,14 +25,29 @@ export function useVoiceAgent() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
   const audioContextRef = useRef<AudioContext | null>(null);
+  // keep track of the time when the next chunk should be played
   const nextPlayTimeRef = useRef(0);
+  // keep track of number of audio chunks that are yet to be played
   const activeSourceCountRef = useRef(0);
   const audioEndReceivedRef = useRef(false);
+
+  const stopAudioPlayback = useCallback(() => {
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    nextPlayTimeRef.current = 0;
+    activeSourceCountRef.current = 0;
+    audioEndReceivedRef.current = false;
+  }, []);
 
   const checkPlaybackComplete = useCallback(() => {
     if (activeSourceCountRef.current === 0 && audioEndReceivedRef.current) {
       audioEndReceivedRef.current = false;
-      setPipelineState("LISTENING");
+      const ws = socketRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "audio_playback_complete" }));
+      }
     }
   }, []);
 
@@ -79,14 +94,9 @@ export function useVoiceAgent() {
         const msg = JSON.parse(event.data as string);
 
         switch (msg.type) {
-          case "state": {
-            const newState = msg.state as PipelineState;
-            if (newState === "LISTENING" && activeSourceCountRef.current > 0) {
-              break;
-            }
-            setPipelineState(newState);
+          case "state":
+            setPipelineState(msg.state as PipelineState);
             break;
-          }
 
           case "transcript":
             if (msg.isFinal) {
@@ -119,12 +129,20 @@ export function useVoiceAgent() {
             audioEndReceivedRef.current = true;
             checkPlaybackComplete();
             break;
+
+          case "barge_in":
+            stopAudioPlayback();
+            audioContextRef.current = new AudioContext({
+              sampleRate: TTS_SAMPLE_RATE,
+            });
+            isStreamingAgentRef.current = false;
+            break;
         }
       } catch {
         console.error("[WS] Failed to parse message");
       }
     },
-    [scheduleAudioChunk, checkPlaybackComplete]
+    [scheduleAudioChunk, checkPlaybackComplete, stopAudioPlayback]
   );
 
   const stopRecording = useCallback(() => {
@@ -141,7 +159,13 @@ export function useVoiceAgent() {
   }, []);
 
   const startRecording = useCallback(async (ws: WebSocket) => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
     mediaStreamRef.current = stream;
 
     const recorder = new MediaRecorder(stream, {
@@ -157,16 +181,6 @@ export function useVoiceAgent() {
     recorder.start(RECORDER_TIMESLICE_MS);
     mediaRecorderRef.current = recorder;
     console.log("[Mic] Recording started");
-  }, []);
-
-  const stopAudioPlayback = useCallback(() => {
-    if (audioContextRef.current) {
-      audioContextRef.current.close().catch(() => {});
-      audioContextRef.current = null;
-    }
-    nextPlayTimeRef.current = 0;
-    activeSourceCountRef.current = 0;
-    audioEndReceivedRef.current = false;
   }, []);
 
   const connect = useCallback(

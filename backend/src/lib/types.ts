@@ -24,4 +24,5 @@ export type ServerMessage =
   | { type: "state"; state: PipelineState }
   | { type: "transcript"; text: string; isFinal: boolean }
   | { type: "agent_response"; text: string }
-  | { type: "audio_end" };
+  | { type: "audio_end" }
+  | { type: "barge_in" };

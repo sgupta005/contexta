@@ -39,6 +39,8 @@ export class VoicePipeline {
 
   private greetingSent = false;
 
+  private turnAbort: AbortController | null = null;
+
   constructor(config: VoicePipelineConfig) {
     this.socket = config.socket;
     this.scenario = config.scenario;
@@ -65,7 +67,7 @@ export class VoicePipeline {
       return;
     }
 
-    if (this.state === "LISTENING" && this.deepgramSTT) {
+    if (this.deepgramSTT) {
       this.deepgramSTT.send(audio);
     }
   }
@@ -82,6 +84,12 @@ export class VoicePipeline {
 
         case "stop":
           this.handleStop();
+          break;
+
+        case "audio_playback_complete":
+          if (this.state === "SPEAKING") {
+            this.setState("LISTENING");
+          }
           break;
 
         default:
@@ -126,10 +134,6 @@ export class VoicePipeline {
       if (this.audioBuffer.length > 1) {
         this.audioBuffer = this.audioBuffer.slice(0, 1);
       }
-
-      if (this.sttReady) {
-        this.setState("LISTENING");
-      }
     } catch (err) {
       console.error("[VoicePipeline] Greeting failed:", err);
       this.closeSTT();
@@ -170,7 +174,6 @@ export class VoicePipeline {
           const chunk = this.audioBuffer[i];
           if (chunk) this.deepgramSTT!.send(chunk);
         }
-        this.setState("LISTENING");
       }
       // clear the buffer
       // if greeting is not sent, the buffer will be cleared except the first message (it has the opus/webm header) so that we don't send the greeting audio to STT
@@ -192,9 +195,9 @@ export class VoicePipeline {
     });
 
     this.deepgramSTT.on("start_of_turn", () => {
-      console.log(
-        `[VoicePipeline] StartOfTurn during ${this.state} (barge-in logged, not acted on in v1)`
-      );
+      if (this.state === "SPEAKING" || this.state === "THINKING") {
+        this.handleBargeIn();
+      }
     });
 
     this.deepgramSTT.on("error", (err: Error) => {
@@ -218,6 +221,9 @@ export class VoicePipeline {
 
     this.setState("THINKING");
 
+    this.turnAbort = new AbortController();
+    const { signal } = this.turnAbort;
+
     try {
       let fullResponse = "";
       let sentenceBuffer = "";
@@ -227,6 +233,8 @@ export class VoicePipeline {
         this.scenario.systemPrompt,
         this.conversationHistory
       )) {
+        if (signal.aborted) break;
+
         this.sendMessage({ type: "agent_response", text: token });
 
         fullResponse += token;
@@ -238,33 +246,56 @@ export class VoicePipeline {
           sentenceBuffer = remaining;
 
           if (!speakingStarted) {
+            await this.deepgramTTS!.waitUntilReady();
             this.setState("SPEAKING");
             speakingStarted = true;
           }
 
           await this.deepgramTTS!.speak(sentence);
+          if (signal.aborted) break;
         }
       }
 
-      this.conversationHistory.push({
-        role: "assistant",
-        content: fullResponse,
-      });
-
-      if (sentenceBuffer.trim()) {
-        if (!speakingStarted) {
-          this.setState("SPEAKING");
-        }
-        await this.deepgramTTS!.speak(sentenceBuffer.trim());
+      if (fullResponse) {
+        this.conversationHistory.push({
+          role: "assistant",
+          content: fullResponse,
+        });
       }
 
-      this.sendMessage({ type: "audio_end" });
-      this.setState("LISTENING");
+      if (!signal.aborted) {
+        if (sentenceBuffer.trim()) {
+          if (!speakingStarted) {
+            await this.deepgramTTS!.waitUntilReady();
+            this.setState("SPEAKING");
+          }
+          await this.deepgramTTS!.speak(sentenceBuffer.trim());
+        }
+
+        this.sendMessage({ type: "audio_end" });
+      }
     } catch (err) {
-      console.error("[VoicePipeline] Turn processing failed:", err);
-      this.sendMessage({ type: "audio_end" });
-      this.setState("LISTENING");
+      if (!signal.aborted) {
+        console.error("[VoicePipeline] Turn processing failed:", err);
+        this.sendMessage({ type: "audio_end" });
+      }
+    } finally {
+      this.turnAbort = null;
     }
+  }
+
+  private handleBargeIn(): void {
+    console.log("[VoicePipeline] Barge-in! Interrupting agent.");
+
+    if (this.turnAbort) {
+      this.turnAbort.abort();
+    }
+
+    this.closeTTS();
+    this.connectTTS();
+
+    this.sendMessage({ type: "barge_in" });
+    this.setState("LISTENING");
   }
 
   private setState(newState: PipelineState): void {
