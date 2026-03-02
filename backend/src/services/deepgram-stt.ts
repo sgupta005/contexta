@@ -22,7 +22,9 @@ export class DeepgramSTTService extends EventEmitter {
       this.close();
     }
 
-    this.ws = new WebSocket(DEEPGRAM_FLUX_URL, ["token", this.apiKey]);
+    this.ws = new WebSocket(DEEPGRAM_FLUX_URL, [], {
+      headers: { Authorization: `Token ${this.apiKey}` },
+    });
 
     this.ws.on("open", () => {
       console.log("[DeepgramSTT] Connected to Flux");
@@ -100,6 +102,10 @@ export class DeepgramSTTService extends EventEmitter {
       }
     } else if (msg.type === "Connected") {
       console.log("[DeepgramSTT] Flux session established");
+    } else if (msg.type === "Error") {
+      console.error(
+        `[DeepgramSTT] Fatal error — code=${msg.code} description="${msg.description}"`
+      );
     }
   }
 }
