@@ -209,8 +209,6 @@ export function useVoiceAgent() {
         setStatus("connected");
         console.log("[WS] Connected to voice agent");
 
-        ws.send(JSON.stringify({ type: "start" }));
-
         try {
           await startRecording(ws);
         } catch (err) {
@@ -218,6 +216,8 @@ export function useVoiceAgent() {
           setStatus("error");
           ws.close(4000, "Microphone access denied");
         }
+
+        ws.send(JSON.stringify({ type: "start" }));
       };
 
       ws.onmessage = handleServerMessage;
