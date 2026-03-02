@@ -130,10 +130,6 @@ export class VoicePipeline {
         text: this.scenario.greeting,
       });
 
-      // Before the greeting is sent, we only need the first chunk because it has the opus/webm header, so remove any other chunks
-      if (this.audioBuffer.length > 1) {
-        this.audioBuffer = this.audioBuffer.slice(0, 1);
-      }
     } catch (err) {
       console.error("[VoicePipeline] Greeting failed:", err);
       this.closeSTT();
@@ -163,20 +159,13 @@ export class VoicePipeline {
     this.deepgramSTT.on("open", () => {
       this.sttReady = true;
 
-      // the first chunk has the opus/webm header, so send it to the STT
-      const firstChunk = this.audioBuffer[0];
-      if (firstChunk) {
-        this.deepgramSTT!.send(firstChunk);
+      // Send all buffered chunks in order to maintain WebM stream continuity.
+      // Skipping intermediate chunks would create a timestamp gap that Deepgram
+      // rejects as corrupt data, especially on slower networks where the greeting
+      // takes several seconds.
+      for (const chunk of this.audioBuffer) {
+        this.deepgramSTT!.send(chunk);
       }
-      // the subsequent chunks are the actual user audio and are only to be sent after the greeting
-      if (this.greetingSent) {
-        for (let i = 1; i < this.audioBuffer.length; i++) {
-          const chunk = this.audioBuffer[i];
-          if (chunk) this.deepgramSTT!.send(chunk);
-        }
-      }
-      // clear the buffer
-      // if greeting is not sent, the buffer will be cleared except the first message (it has the opus/webm header) so that we don't send the greeting audio to STT
       this.audioBuffer = [];
     });
 
