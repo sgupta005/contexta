@@ -99,7 +99,11 @@ The LLM response is streamed token by token. As soon as the accumulated tokens f
    - **systemPrompt**
 6. **Live deployed**: Production deployment available at `https://contexta-alpha.vercel.app`.
 
-### 5. Setup Instructions
+### 5. Trade-offs
+
+**Acoustic feedback at high volume:** When the system audio is turned up, the microphone can pick up the agent's speech from the speakers and send it back to the backend as if it were user input. A straightforward mitigation would be to mute the microphone while the agent is speaking. However, that would disable the barge-in feature, which relies on the microphone remaining active during agent playback so the user can interrupt at any time. As a result, there is an inherent trade-off between preventing acoustic feedback and supporting natural, interruptible conversations.
+
+### 6. Setup Instructions
 
 #### Backend
 
