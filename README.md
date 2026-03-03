@@ -2,6 +2,8 @@
 
 **Live URL:** [https://contexta-alpha.vercel.app](https://contexta-alpha.vercel.app)
 
+**Demo Video:** [https://www.loom.com/share/7a595f84e511493ea9eba0795f6a2bd2](https://www.loom.com/share/7a595f84e511493ea9eba0795f6a2bd2)
+
 ### 1. Overview
 
 Contexta is a real-time conversational agent that streams both text and audio responses with low latency. It is built as a full-stack application with a Next.js frontend and a Node.js backend optimized for streaming and barge-in interactions.
