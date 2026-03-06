@@ -129,7 +129,6 @@ export class VoicePipeline {
         type: "agent_response",
         text: this.scenario.greeting,
       });
-
     } catch (err) {
       console.error("[VoicePipeline] Greeting failed:", err);
       this.closeSTT();
@@ -211,6 +210,7 @@ export class VoicePipeline {
     this.setState("THINKING");
 
     this.turnAbort = new AbortController();
+    // When controller.abort() is called, the signal becomes "aborted".
     const { signal } = this.turnAbort;
 
     try {
