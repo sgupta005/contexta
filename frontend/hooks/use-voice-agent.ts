@@ -24,11 +24,18 @@ export function useVoiceAgent() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
+  // audio context for playing TTS audio
   const audioContextRef = useRef<AudioContext | null>(null);
   // keep track of the time when the next chunk should be played
   const nextPlayTimeRef = useRef(0);
+
+  // for latency logging: timestamp when user message ended (transcript isFinal)
+  const userMessageEndTimeRef = useRef<number | null>(null);
+
   // keep track of number of audio chunks that are yet to be played
+  // used to determine when audio has finished playing
   const activeSourceCountRef = useRef(0);
+  // true when server has sent all audio chunks
   const audioEndReceivedRef = useRef(false);
 
   const stopAudioPlayback = useCallback(() => {
@@ -45,17 +52,21 @@ export function useVoiceAgent() {
     if (activeSourceCountRef.current === 0 && audioEndReceivedRef.current) {
       audioEndReceivedRef.current = false;
       const ws = socketRef.current;
+      // notify the server that the audio has finished playing
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "audio_playback_complete" }));
       }
     }
   }, []);
 
+  // play audio chunks continuously without gaps
   const scheduleAudioChunk = useCallback(
     (pcmData: ArrayBuffer) => {
       const ctx = audioContextRef.current;
       if (!ctx || pcmData.byteLength === 0) return;
 
+      // convert linear16 audio to float32
+      // server sends audio in linear16, web audio expects float32
       const int16 = new Int16Array(pcmData);
       const float32 = new Float32Array(int16.length);
       for (let i = 0; i < int16.length; i++) {
@@ -86,6 +97,14 @@ export function useVoiceAgent() {
   const handleServerMessage = useCallback(
     (event: MessageEvent) => {
       if (event.data instanceof ArrayBuffer) {
+        const t = userMessageEndTimeRef.current;
+        if (t !== null) {
+          const latencyMs = Math.round(performance.now() - t);
+          console.log(
+            `[Latency] User message end → first audio chunk: ${latencyMs}ms`
+          );
+          userMessageEndTimeRef.current = null;
+        }
         scheduleAudioChunk(event.data);
         return;
       }
@@ -100,6 +119,9 @@ export function useVoiceAgent() {
 
           case "transcript":
             if (msg.isFinal) {
+              // for latency logging
+              userMessageEndTimeRef.current = performance.now();
+
               setMessages((prev) => [
                 ...prev,
                 { role: "user", content: msg.text },
@@ -131,6 +153,7 @@ export function useVoiceAgent() {
             break;
 
           case "barge_in":
+            userMessageEndTimeRef.current = null;
             stopAudioPlayback();
             audioContextRef.current = new AudioContext({
               sampleRate: TTS_SAMPLE_RATE,
@@ -178,6 +201,7 @@ export function useVoiceAgent() {
       }
     };
 
+    // without RECORDER_TIMESLICE_MS, recorder.ondataavailable will only be called on recorder.stop()
     recorder.start(RECORDER_TIMESLICE_MS);
     mediaRecorderRef.current = recorder;
     console.log("[Mic] Recording started");
@@ -194,6 +218,7 @@ export function useVoiceAgent() {
       setCurrentTranscript("");
       setPipelineState("IDLE");
       isStreamingAgentRef.current = false;
+      userMessageEndTimeRef.current = null;
 
       // Create AudioContext early — requires user gesture context
       stopAudioPlayback();
