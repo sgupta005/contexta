@@ -1,6 +1,6 @@
 {
   // Visit https://aka.ms/tsconfig to read more about this file
-  "extends": "@tsconfig/node22/tsconfig.json",
+  "extends": "./node_modules/@tsconfig/node22/tsconfig.json",
   "compilerOptions": {
     // File Layout
     "outDir": "./dist",
