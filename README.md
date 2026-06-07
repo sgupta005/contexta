@@ -1,4 +1,4 @@
-## SDE Intern Assignment – Contexta (Context-Aware Voice Agent)
+## Contexta (Context-Aware Voice Agent)
 
 **Live URL:** [https://contexta-alpha.vercel.app](https://contexta-alpha.vercel.app)
 
